@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+output/
+PYROLL_REFERENCE_*.xlsx
+*_by_department_DRAFT.xlsx
+*.csv
+!test_data/*.csv

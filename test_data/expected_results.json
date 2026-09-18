@@ -1,0 +1,94 @@
+{
+  "test_case_1_balanced": {
+    "description": "Fully self-consistent synthetic payroll batch. Hand-verified. Script output must match every figure below exactly.",
+    "pay_period_header": "20260901",
+    "department_matrix": {
+      "10": {
+        "6050_wages_and_salaries": 8200.00,
+        "6046_cpp_expense": 1200.00,
+        "6047_ei_expense": 600.00,
+        "6049_vacation_expense": 300.00,
+        "6044_tips_and_gratuities": 150.00,
+        "2024_staff_deposit": 0.00,
+        "6043_benefits": 0.00,
+        "2011_vacation_payable": 0.00
+      },
+      "15": {
+        "6050_wages_and_salaries": 12000.00,
+        "6046_cpp_expense": 900.00,
+        "6047_ei_expense": 460.00,
+        "6049_vacation_expense": 0.00,
+        "6044_tips_and_gratuities": 0.00,
+        "2024_staff_deposit": 100.00,
+        "6043_benefits": 50.00,
+        "2011_vacation_payable": 0.00
+      },
+      "0010-1": {
+        "6050_wages_and_salaries": 5000.00,
+        "6046_cpp_expense": 400.00,
+        "6047_ei_expense": 200.00,
+        "6049_vacation_expense": 0.00,
+        "6044_tips_and_gratuities": 0.00,
+        "2024_staff_deposit": 0.00,
+        "6043_benefits": 0.00,
+        "2011_vacation_payable": 0.00
+      }
+    },
+    "department_matrix_grand_total": 29560.00,
+    "closing_entries": {
+      "6007_utilities": 2000.00,
+      "2024_staff_deposit_company": 100.00,
+      "2016_wages_payable": 14700.00,
+      "2017_federal_income_tax_payable": 5000.00,
+      "2014_cpp_payable": 5000.00,
+      "2013_ei_payable": 2160.00,
+      "2015_rrsp_payable": 600.00,
+      "6043_employer_health_benefits": 0.00
+    },
+    "closing_entries_total": 29560.00,
+    "balance_check": "department_matrix_grand_total must equal closing_entries_total to the penny -- both are 29560.00 here",
+    "leg_a_dues_gst_pst": {
+      "5004_dues_and_subscription": 500.00,
+      "2031_gst_paid_on_purchases": 25.00,
+      "2040_pst_paid_on_purchases": 0.50,
+      "1004_envision_bank_account_credit": 525.50
+    },
+    "leg_b_ei_cpp_fedtax": {
+      "2013_ei_payable": 2160.00,
+      "2014_cpp_payable": 5000.00,
+      "2017_federal_income_tax_payable": 5000.00,
+      "1004_envision_bank_account_credit": 12160.00
+    },
+    "cross_checks": {
+      "cpp_expense_matrix_total_must_equal_top_block_cpp_employer_total": {
+        "matrix_side": 2500.00,
+        "top_block_side": "CPP/QPP Employer (2500.00) + CPP2/QPP2 Employer (not present this period, so 0)",
+        "must_match": true
+      },
+      "ei_expense_matrix_total_must_equal_top_block_ei_employer": {
+        "matrix_side": 1260.00,
+        "top_block_side": 1260.00,
+        "must_match": true
+      }
+    }
+  },
+  "test_case_2_unknowns": {
+    "description": "Deliberately NOT a realistic or balanced payroll batch. Its only purpose is to verify the script correctly detects and flags unknowns instead of silently guessing or dropping data. Do not assert a balanced total for this case.",
+    "expected_flags": [
+      {
+        "type": "unknown_department_code",
+        "department_code": "99",
+        "reason": "Not present in the department code -> name mapping table",
+        "required_behavior": "Output must show 'DEPT 99 (name not confirmed)' as a placeholder, clearly highlighted, and must NOT invent a department name."
+      },
+      {
+        "type": "unmapped_pay_component_label",
+        "label": "Mystery Allowance",
+        "department_code": "99",
+        "amount": -500.00,
+        "reason": "Does not match any label in the GL_CATEGORY_SOURCE_LABELS table (see spec section 5)",
+        "required_behavior": "Output must show an explicit '\u26a0\ufe0f UNMAPPED' placeholder for this line in the GL account column, must NOT silently fold it into Wages & Salaries or any other bucket, and must list it in a NEEDS REVIEW section with the raw label, department, and amount."
+      }
+    ]
+  }
+}
