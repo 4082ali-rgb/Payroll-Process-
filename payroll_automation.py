@@ -23,6 +23,7 @@ import argparse
 import csv
 import sys
 from collections import OrderedDict
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from openpyxl import Workbook
@@ -200,7 +201,7 @@ def parse_csv(path):
 # Computation (spec sections 2-5)
 # --------------------------------------------------------------------------- #
 
-def compute(header_date, top_block, dept_blocks, dept_order, bank=None):
+def compute(header_date, top_block, dept_blocks, dept_order, ignored=None, bank=None):
     """Pure computation. Returns a dict with every figure plus flags/notes."""
     top = OrderedDict()             # label -> summed Decimal (first-seen order)
     for _b, label, amt in top_block:
@@ -297,7 +298,7 @@ def compute(header_date, top_block, dept_blocks, dept_order, bank=None):
 
     return {
         'header_date': header_date,
-        'top': top, 'top_block': top_block,
+        'top': top, 'top_block': top_block, 'ignored': ignored or [],
         'dept_order': dept_order, 'dept_names': dept_names, 'dept_blocks': dept_blocks,
         'matrix': matrix, 'category_totals': category_totals, 'matrix_total': matrix_total,
         'leg_a': leg_a, 'leg_b': leg_b,
@@ -321,68 +322,115 @@ def _ref_formula(rows, negate=False):
 
 
 def write_reference(res, path):
+    """Reference workpaper laid out like the hand-built "Master Reference" workbook:
+    raw source rows verbatim down columns A/B/D/E (batch, dept code, label, amount)
+    with a per-department SUM subtotal in column F, a GL-coding box in columns
+    H/K/L alongside the top block (Leg A, Leg B, Closing entries - all live
+    formulas referencing the raw E-column cells), a department cross-tab matrix,
+    and a reversal-check box that ties the trailing "closing noise" block back to
+    the top-block Service Fees/GST/PST figures for a human to eyeball.
+    """
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Reference'
-    ws.column_dimensions['A'].width = 34
-    ws.column_dimensions['D'].width = 30
-    ws.column_dimensions['E'].width = 14
+    period = res['header_date']
+    try:
+        d = date(int(period[:4]), int(period[4:6]), int(period[6:8]))
+        ws.title = d.strftime('%B %d Payroll')[:31]
+    except Exception:
+        ws.title = 'Reference'
+    ws.column_dimensions['A'].width = 10
+    ws.column_dimensions['D'].width = 26
+    ws.column_dimensions['E'].width = 13
+    ws.column_dimensions['H'].width = 30
 
-    ws['A1'] = res['header_date']
+    ws['A1'] = int(period) if period.isdigit() else period
     ws['A1'].font = BOLD
-    ws['A2'] = 'TOP BLOCK (company-wide, raw order)'
-    ws['A2'].font = BOLD
-    r = 3
+
+    # ---- Top block: raw pass-through (A=batch, D=label, E=amount) ------------
+    r = 2
     top_rows = {}                    # label -> [rows]
     for batch, label, amt in res['top_block']:
-        ws.cell(r, 3, batch); ws.cell(r, 4, label); ws.cell(r, 5, float(amt))
+        ws.cell(r, 1, batch); ws.cell(r, 4, label); ws.cell(r, 5, float(amt))
         top_rows.setdefault(label, []).append(r)
         r += 1
+    top_block_last = r - 1
 
     def top_ref(labels):
         rows = [rr for l in labels for rr in top_rows.get(l, [])]
         return _ref_formula(rows)
 
-    r += 1
-    ws.cell(r, 1, 'TOP-BLOCK GL CODING').font = BOLD; r += 1
-    for title, leg in (('Leg A - Dues/GST/PST (Debits; bank = Credit)', LEG_A),
-                       ('Leg B - EI/CPP/FedTax remittance (Debits; bank = Credit)', LEG_B)):
-        ws.cell(r, 1, title).font = BOLD; r += 1
-        first = r
-        for _k, name, labels in leg:
-            ws.cell(r, 1, name); ws.cell(r, 2, top_ref(labels)); r += 1
-        ws.cell(r, 1, BANK_ACCOUNT[1] + ' (CREDIT)'); ws.cell(r, 2, f'=SUM(B{first}:B{r - 1})'); r += 1
-        r += 1
+    # ---- GL coding box (H/K/L), alongside the top block, live formulas -------
+    cr = 4
+    cr += 1
+    leg_a_first = cr
+    for _k, name, labels in LEG_A:
+        ws.cell(cr, 8, name); ws.cell(cr, 11, top_ref(labels)); cr += 1
+    ws.cell(cr, 8, BANK_ACCOUNT[1]); ws.cell(cr, 12, f'=SUM(K{leg_a_first}:K{cr - 1})')
+    leg_a_bank_row = cr
+    cr += 2
+    leg_b_first = cr
+    for _k, name, labels in LEG_B:
+        ws.cell(cr, 8, name); ws.cell(cr, 11, top_ref(labels)); cr += 1
+    ws.cell(cr, 8, BANK_ACCOUNT[1]); ws.cell(cr, 12, f'=SUM(K{leg_b_first}:K{cr - 1})')
+    leg_b_bank_row = cr
+    cr += 2
+    closing_first = cr
+    closing_credit_rows = {}
+    for key, name, labels in CLOSING:
+        ws.cell(cr, 8, name)
+        if key == '2014_cpp_payable':
+            ws.cell(cr, 12, f'=K{leg_b_first + 1}')          # reuse Leg B's CPP calc
+        elif key == '2013_ei_payable':
+            ws.cell(cr, 12, f'=K{leg_b_first}')              # reuse Leg B's EI calc
+        else:
+            ws.cell(cr, 12, top_ref(labels))
+        closing_credit_rows[key] = cr
+        cr += 1
+    ws.cell(cr, 8, 'CLOSING TOTAL').font = BOLD
+    ws.cell(cr, 12, f'=SUM(L{closing_first}:L{cr - 1})').font = BOLD
+    closing_total_cell = f'L{cr}'
+    coding_box_last = cr
 
-    # Department blocks
+    r = max(r, coding_box_last) + 2
+
+    # ---- Department blocks: raw pass-through + F-column subtotal -------------
     dept_item_rows = {}              # code -> {label: [rows]}
-    dept_subtotal_row = {}
-    ws.cell(r, 1, 'DEPARTMENT BLOCKS').font = BOLD; r += 1
+    dept_first_row, dept_last_row = {}, {}
     for code in res['dept_order']:
         name = res['dept_names'][code]
-        hdr = ws.cell(r, 1, f'{code} — {name}'); hdr.font = BOLD
         if code not in DEPT_NAMES:
-            hdr.fill = FILL_REVIEW
-        r += 1
+            hdr = ws.cell(r, 4, f'{code} — {name}'); hdr.font = BOLD; hdr.fill = FILL_REVIEW
+            r += 1
         first = r
         dept_item_rows[code] = {}
+        dept_code_val = code if '-' in code else (int(code) if code.isdigit() else code)
         for batch, label, amt in res['dept_blocks'][code]:
-            ws.cell(r, 3, batch); ws.cell(r, 4, label); ws.cell(r, 5, float(amt))
-            if label in LABEL_TO_CATEGORY:
-                ws.cell(r, 6, f'{LABEL_TO_CATEGORY[label]}')
-            else:
-                c = ws.cell(r, 6, UNMAPPED_MARK); c.fill = FILL_REVIEW
+            ws.cell(r, 1, batch); ws.cell(r, 2, dept_code_val)
+            ws.cell(r, 4, label); ws.cell(r, 5, float(amt))
+            if label not in LABEL_TO_CATEGORY:
                 ws.cell(r, 4).fill = FILL_REVIEW
+                ws.cell(r, 6, UNMAPPED_MARK).fill = FILL_REVIEW
             dept_item_rows[code].setdefault(label, []).append(r)
             r += 1
-        ws.cell(r, 4, 'Subtotal').font = BOLD
-        ws.cell(r, 5, f'=SUM(E{first}:E{r - 1})' if r > first else '=0').font = BOLD
-        dept_subtotal_row[code] = r
-        r += 2
+        dept_first_row[code], dept_last_row[code] = first, r - 1
+        ws.cell(r, 6, f'=SUM(E{first}:E{r - 1})' if r > first else '=0').font = BOLD
+        r += 1
 
-    # Cross-tab matrix
+    # ---- Trailing reversal / closing-noise block (informational only) --------
+    ignored_rows = {}
+    if res['ignored']:
+        r += 1
+        ws.cell(r, 1, 'Below: trailing reversal block from the source export - bookkeeping '
+                'noise, NOT part of the GL (see reversal check to the right).').font = BOLD
+        r += 1
+        for batch, label, amt in res['ignored']:
+            ws.cell(r, 1, batch); ws.cell(r, 4, label); ws.cell(r, 5, float(amt))
+            ignored_rows.setdefault(label, []).append(r)
+            r += 1
+
+    # ---- Department cross-tab matrix ------------------------------------------
+    r += 2
     ws.cell(r, 1, 'DEPARTMENT MATRIX (magnitudes, all DEBIT)').font = BOLD; r += 1
-    ws.cell(r, 1, 'GL category').font = BOLD
     for j, code in enumerate(res['dept_order']):
         ws.cell(r, 2 + j, code).font = BOLD
     total_col = 2 + len(res['dept_order'])
@@ -401,27 +449,36 @@ def write_reference(res, path):
         col = get_column_letter(2 + j)
         ws.cell(r, 2 + j, f'=SUM({col}{matrix_first}:{col}{r - 1})').font = BOLD
     matrix_total_cell = f'{get_column_letter(total_col)}{r}'
-    r += 2
-
-    # Closing checklist
-    ws.cell(r, 1, 'CLOSING ENTRIES (all CREDIT)').font = BOLD; r += 1
-    closing_first = r
-    for _k, name, labels in CLOSING:
-        ws.cell(r, 1, name); ws.cell(r, 2, top_ref(labels)); r += 1
-    ws.cell(r, 1, 'CLOSING TOTAL').font = BOLD
-    ws.cell(r, 2, f'=SUM(B{closing_first}:B{r - 1})').font = BOLD
-    closing_total_cell = f'B{r}'
     r += 1
     ws.cell(r, 1, 'CHECK matrix - closing (must be 0)').font = BOLD
     ws.cell(r, 2, f'={matrix_total_cell}-{closing_total_cell}').font = BOLD
     r += 2
 
-    # Bank rec box
+    # ---- Reversal check box: ties the ignored block back to the top block ----
+    if res['ignored']:
+        ws.cell(r, 8, 'CLOSING REVERSAL CHECK (must be 0)').font = BOLD; r += 1
+        check_first = r
+        for label in ('Service Fees', 'GST', 'PST'):
+            if label in ignored_rows and label in top_rows:
+                ws.cell(r, 8, label)
+                ws.cell(r, 11, f'={_ref_formula(top_rows[label])[1:]}+{_ref_formula(ignored_rows[label])[1:]}')
+                r += 1
+        if 'Payroll Clearing Account' in ignored_rows:
+            first_pca = top_rows.get('Payroll Clearing Account', [])
+            last_pca = ignored_rows.get('Payroll Clearing Account', [])
+            if first_pca and last_pca:
+                ws.cell(r, 8, 'Payroll Clearing Account')
+                ws.cell(r, 11, f'=E{first_pca[0]}+E{last_pca[0]}')
+                r += 1
+        ws.cell(r, 8, 'Total (must be $0.00)').font = BOLD
+        ws.cell(r, 11, f'=SUM(K{check_first}:K{r - 1})').font = BOLD
+        r += 2
+
+    # ---- Bank rec box ----------------------------------------------------------
     ws.cell(r, 1, 'BANK REC').font = BOLD; r += 1
     ws.cell(r, 1, 'NetPay'); ws.cell(r, 2, top_ref(['Net Pay'])); net_row = r; r += 1
     ws.cell(r, 1, 'Bank (manual entry)')
-    bank_cell = ws.cell(r, 2)
-    bank_cell.fill = FILL_MANUAL
+    ws.cell(r, 2).fill = FILL_MANUAL
     ws.cell(r, 3, res['bank_status']['net_pay'])
     r += 1
     ws.cell(r, 1, 'Difference'); ws.cell(r, 2, f'=B{net_row}-B{r - 1}'); r += 2
@@ -550,8 +607,8 @@ def write_draft(res, path):
 # --------------------------------------------------------------------------- #
 
 def run(csv_path, out_dir='.', bank=None, force=False, quiet=False):
-    header_date, top_block, dept_blocks, dept_order, _ignored = parse_csv(csv_path)
-    res = compute(header_date, top_block, dept_blocks, dept_order, bank=bank)
+    header_date, top_block, dept_blocks, dept_order, ignored = parse_csv(csv_path)
+    res = compute(header_date, top_block, dept_blocks, dept_order, ignored=ignored, bank=bank)
     err = (lambda *a: None) if quiet else (lambda *a: print(*a, file=sys.stderr))
     for f in res['flags']:
         if f['type'] == 'unknown_department_code':
