@@ -247,6 +247,17 @@ def compute(header_date, top_block, dept_blocks, dept_order, ignored=None, bank=
     cpp_employer_top = tsum(['CPP/QPP Employer', 'CPP2/QPP2 Employer'])
     ei_employer_top = tsum(['EI Employer'])
 
+    # Any top-block label not consumed by Leg A, Leg B, or a closing-entry formula
+    # is unmapped: it must never silently vanish from the output (spec: never guess,
+    # never drop - flag it).
+    known_top_labels = ({n for _k, _n2, labels in LEG_A for n in labels}
+                        | {n for _k, _n2, labels in LEG_B for n in labels}
+                        | {n for _k, _n2, labels in CLOSING for n in labels}
+                        | {'Payroll Clearing Account'})  # control total, not itself posted
+    unmapped_top = [(label, amt) for label, amt in top.items() if label not in known_top_labels]
+    for label, amt in unmapped_top:
+        flags.append({'type': 'unmapped_topblock_label', 'label': label, 'amount': amt})
+
     # Period-specific quirks
     if any(l in top for l in ('CPP2/QPP2 Employee', 'CPP2/QPP2 Employer')):
         notes.append('CPP2/QPP2 (enhanced CPP) lines present this period; included in CPP Payable / CPP Expense.')
@@ -305,7 +316,7 @@ def compute(header_date, top_block, dept_blocks, dept_order, ignored=None, bank=
         'closing': closing, 'closing_total': closing_total,
         'cpp_employer_top': cpp_employer_top, 'ei_employer_top': ei_employer_top,
         'net_pay': net_pay,
-        'unmapped': unmapped, 'flags': flags, 'notes': notes, 'failures': failures,
+        'unmapped': unmapped, 'unmapped_top': unmapped_top, 'flags': flags, 'notes': notes, 'failures': failures,
         'bank_status': bank_status, 'bank_confirmed': bank_confirmed,
     }
 
@@ -503,6 +514,10 @@ def review_lines(res):
     for code, label, amt in res['unmapped']:
         lines.append(f"Unmapped pay component '{label}' in department {code}, amount {amt} "
                      f"-> {UNMAPPED_MARK}. Not included in any GL bucket; map it before posting.")
+    for label, amt in res.get('unmapped_top', []):
+        lines.append(f"Unmapped top-block (company-wide) label '{label}', amount {amt} "
+                     f"-> not in Leg A, Leg B, or any closing-entry formula. NOT included in "
+                     f"the output at all; map it to a GL account before posting.")
     return lines
 
 
@@ -613,6 +628,8 @@ def run(csv_path, out_dir='.', bank=None, force=False, quiet=False):
     for f in res['flags']:
         if f['type'] == 'unknown_department_code':
             err(f"WARNING: unknown department code {f['department_code']} — placeholder used, confirm before posting")
+        elif f['type'] == 'unmapped_topblock_label':
+            err(f"WARNING: unmapped top-block label '{f['label']}' ({f['amount']}) — NOT included in any output, map it before posting")
         else:
             err(f"WARNING: unmapped label '{f['label']}' in dept {f['department_code']} ({f['amount']}) — flagged {UNMAPPED_MARK}")
     if res['failures']:

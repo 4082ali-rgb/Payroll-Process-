@@ -151,5 +151,31 @@ class UnknownsCase(unittest.TestCase):
                             for row in ws_ref.iter_rows() for c in row))
 
 
+class UnmappedTopBlockLabel(unittest.TestCase):
+    """A top-block (company-wide) label that isn't in Leg A, Leg B, or any closing
+    formula must be flagged, never silently dropped from the output."""
+
+    def test_unknown_topblock_label_is_flagged(self):
+        top_block = [
+            ('B10657', 'Net Pay', Decimal('1000.00')),
+            ('B10657', 'Service Fees', Decimal('10.00')),
+            ('B10657', 'GST', Decimal('0.50')),
+            ('B10657', 'PST', Decimal('0.10')),
+            ('B10657', 'Pet Deposit', Decimal('-500.00')),
+        ]
+        res = pa.compute('20260101', top_block, {}, [], ignored=[])
+        self.assertEqual(res['unmapped_top'], [('Pet Deposit', Decimal('-500.00'))])
+        self.assertIn({'type': 'unmapped_topblock_label', 'label': 'Pet Deposit', 'amount': Decimal('-500.00')},
+                      res['flags'])
+        lines = pa.review_lines(res)
+        self.assertTrue(any('Pet Deposit' in l and 'NOT included' in l for l in lines))
+
+    def test_known_topblock_labels_never_flagged(self):
+        """Regression guard: every label actually consumed by Leg A/B/closing must
+        NOT be flagged as unmapped (this is what the existing fixtures exercise)."""
+        res, _files = pa.run(os.path.join(DATA, 'test_case_1_balanced.csv'), tempfile.mkdtemp(), quiet=True)
+        self.assertEqual(res.get('unmapped_top', []), [])
+
+
 if __name__ == '__main__':
     unittest.main()
