@@ -2,6 +2,7 @@
 """Tests for payroll_automation.py against test_data/expected_results.json.
 Run: python -m unittest test_payroll_automation -v
 """
+import csv
 import json
 import os
 import subprocess
@@ -196,6 +197,58 @@ class UnmappedTopBlockLabel(unittest.TestCase):
         NOT be flagged as unmapped (this is what the existing fixtures exercise)."""
         res, _files = pa.run(os.path.join(DATA, 'test_case_1_balanced.csv'), tempfile.mkdtemp(), quiet=True)
         self.assertEqual(res.get('unmapped_top', []), [])
+
+
+class LegJournalCsv(unittest.TestCase):
+    """leg_journal_csv.py: the standalone Leg A / Leg B QuickBooks JE exports."""
+
+    @classmethod
+    def setUpClass(cls):
+        import leg_journal_csv as lj
+        cls.lj = lj
+        cls.exp = EXPECTED['test_case_1_balanced']
+        cls.tmp = tempfile.mkdtemp()
+
+    def _rows(self, leg):
+        out = os.path.join(self.tmp, f'leg{leg}.csv')
+        rc = self.lj.main([os.path.join(DATA, 'test_case_1_balanced.csv'), '--leg', leg,
+                           '--journal-no', 'JJTEST', '--date', '1/9/2026', '--output', out])
+        self.assertEqual(rc, 0)
+        with open(out, newline='') as f:
+            return list(csv.DictReader(f))
+
+    def test_leg_a_matches_expected_figures(self):
+        rows = self._rows('a')
+        self.assertEqual(len(rows), 4)
+        exp = self.exp['leg_a_dues_gst_pst']
+        got = {r['*AccountName']: Decimal(r['Debits'] or f"-{r['Credits']}") for r in rows}
+        self.assertEqual(got['5004 Dues and Subscriptions'], Decimal(str(exp['5004_dues_and_subscription'])))
+        self.assertEqual(got['2031 GST Paid on Purchases'], Decimal(str(exp['2031_gst_paid_on_purchases'])))
+        self.assertEqual(got['2040 PST paid on Purchases'], Decimal(str(exp['2040_pst_paid_on_purchases'])))
+        self.assertEqual(-got['1004 Envision Bank Account'], Decimal(str(exp['1004_envision_bank_account_credit'])))
+        self.assertTrue(all(r['Class'] == '0090-GENERAL & ADMIN' for r in rows if r['Debits']))
+        self.assertTrue(all(r['Class'] == '' for r in rows if r['Credits']))
+
+    def test_leg_b_matches_expected_figures_and_balances(self):
+        rows = self._rows('b')
+        self.assertEqual(len(rows), 4)
+        exp = self.exp['leg_b_ei_cpp_fedtax']
+        got = {r['*AccountName']: Decimal(r['Debits'] or f"-{r['Credits']}") for r in rows}
+        self.assertEqual(got['2013 EI Payable'], Decimal(str(exp['2013_ei_payable'])))
+        self.assertEqual(got['2014 CPP Payable'], Decimal(str(exp['2014_cpp_payable'])))
+        self.assertEqual(got['2017 Federal Income Tax Payable'], Decimal(str(exp['2017_federal_income_tax_payable'])))
+        self.assertEqual(-got['1004 Envision Bank Account'], Decimal(str(exp['1004_envision_bank_account_credit'])))
+        debits = sum(Decimal(r['Debits']) for r in rows if r['Debits'])
+        credits = sum(Decimal(r['Credits']) for r in rows if r['Credits'])
+        self.assertEqual(debits, credits)
+
+    def test_custom_class_override(self):
+        out = os.path.join(self.tmp, 'legA_noclass.csv')
+        self.lj.main([os.path.join(DATA, 'test_case_1_balanced.csv'), '--leg', 'a',
+                     '--journal-no', 'JJTEST', '--date', '1/9/2026', '--output', out, '--class', ''])
+        with open(out, newline='') as f:
+            rows = list(csv.DictReader(f))
+        self.assertTrue(all(r['Class'] == '' for r in rows))
 
 
 if __name__ == '__main__':

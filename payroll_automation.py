@@ -105,9 +105,9 @@ EI_PAYABLE_LABELS = ['EI Employee', 'EI Employer']
 FED_TAX_LABELS = ['Federal Tax']
 
 LEG_A = [
-    ('5004_dues_and_subscription', '5004 Dues and Subscription', ['Service Fees']),
+    ('5004_dues_and_subscription', '5004 Dues and Subscriptions', ['Service Fees']),
     ('2031_gst_paid_on_purchases', '2031 GST Paid on Purchases', ['GST']),
-    ('2040_pst_paid_on_purchases', '2040 PST Paid on Purchases', ['PST']),
+    ('2040_pst_paid_on_purchases', '2040 PST paid on Purchases', ['PST']),
 ]
 LEG_B = [
     ('2013_ei_payable', '2013 EI Payable', EI_PAYABLE_LABELS),
