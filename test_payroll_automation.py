@@ -192,6 +192,17 @@ class UnmappedTopBlockLabel(unittest.TestCase):
         self.assertEqual(row[1].value, 500.0)   # Debit column, positive
         self.assertIsNone(row[2].value)         # Credit column empty
 
+    def test_miscellaneous_charge_maps_to_staff_deposits(self):
+        """Confirmed 2026-09: 'Miscellaneous Charge' (positive, unlike Pet Deposit)
+        also folds into 2024 Staff Deposits, and makes the batch balance exactly."""
+        top_block = [
+            ('B10657', 'Net Pay', Decimal('1000.00')),
+            ('B10657', 'Miscellaneous Charge', Decimal('25.00')),
+        ]
+        res = pa.compute('20260101', top_block, OrderedDict(), [], ignored=[])
+        self.assertEqual(res['unmapped_top'], [])
+        self.assertEqual(res['closing']['2024_staff_deposit_company'], Decimal('25.00'))
+
     def test_known_topblock_labels_never_flagged(self):
         """Regression guard: every label actually consumed by Leg A/B/closing must
         NOT be flagged as unmapped (this is what the existing fixtures exercise)."""

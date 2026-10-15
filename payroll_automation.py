@@ -126,7 +126,7 @@ UTILITIES_LABELS = ['Utilities 100', 'Utilities 170', 'Utilities Repayment']
 
 CLOSING = [   # ALL CREDIT
     ('6007_utilities', '6007 Utilities', UTILITIES_LABELS),
-    ('2024_staff_deposit_company', '2024 Staff Deposits', ['Staff Deposit', 'Pet Deposit']),
+    ('2024_staff_deposit_company', '2024 Staff Deposits', ['Staff Deposit', 'Pet Deposit', 'Miscellaneous Charge']),
     ('2016_wages_payable', '2016 Wages Payable', WAGES_PAYABLE_LABELS),
     ('2017_federal_income_tax_payable', '2017 Federal Income Tax Payable', FED_TAX_LABELS),
     ('2014_cpp_payable', '2014 CPP Payable', CPP_PAYABLE_LABELS),
