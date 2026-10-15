@@ -4,6 +4,11 @@ Online journal-entry import CSV.
 
 Usage:
     python payroll_je.py <input.xlsx> --journal-no JJ1234 --date D/M/YYYY --output <out.csv>
+        [--memo "Department Breakdown"]
+
+--memo is blank by default; pass a label (e.g. "Department Breakdown") to tell
+this entry apart from the related Leg A / Leg B entries from leg_journal_csv.py
+when all three CSVs are open side by side.
 
 Deterministic parsing only: stdlib + openpyxl, single pass over the sheet.
 Unknown account names / classes / non-numeric amounts are never guessed: the row
@@ -107,7 +112,7 @@ def fmt(d):
     return '' if d is None else f'{d:.2f}'
 
 
-def convert(xlsx_path, journal_no, date_str):
+def convert(xlsx_path, journal_no, date_str, memo=''):
     """Returns (rows, warnings, flagged_count, debits_total, credits_total)."""
     journal_date, human = parse_date(date_str)
     description = f'Payroll {human}'
@@ -183,7 +188,7 @@ def convert(xlsx_path, journal_no, date_str):
             total_cr += credit
         if row_flag:
             flagged += 1
-        rows.append([journal_no, journal_date, '', account, debit_s, credit_s, description, '', '', cls])
+        rows.append([journal_no, journal_date, memo, account, debit_s, credit_s, description, '', '', cls])
 
     wb.close()
     return rows, warnings, flagged, total_dr, total_cr
@@ -195,10 +200,11 @@ def main(argv=None):
     p.add_argument('--journal-no', required=True)
     p.add_argument('--date', required=True, help='pay date, D/M/YYYY (e.g. 1/8/2026)')
     p.add_argument('--output', required=True)
+    p.add_argument('--memo', default='', help='optional label written to every row\'s Memo column (blank by default)')
     a = p.parse_args(argv)
 
     try:
-        rows, warnings, flagged, dr, cr = convert(a.input_xlsx, a.journal_no, a.date)
+        rows, warnings, flagged, dr, cr = convert(a.input_xlsx, a.journal_no, a.date, memo=a.memo)
     except ValueError as e:
         print(f'ERROR: {e}', file=sys.stderr)
         return 2

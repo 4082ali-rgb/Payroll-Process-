@@ -250,6 +250,29 @@ class LegJournalCsv(unittest.TestCase):
             rows = list(csv.DictReader(f))
         self.assertTrue(all(r['Class'] == '' for r in rows))
 
+    def test_memo_defaults_distinguish_the_legs(self):
+        rows_a, rows_b = self._rows('a'), self._rows('b')
+        self.assertTrue(all(r['Memo'] == 'Dues and Subscriptions' for r in rows_a))
+        self.assertTrue(all(r['Memo'] == 'EI, CPP & Federal Tax' for r in rows_b))
+        self.assertNotEqual(rows_a[0]['Memo'], rows_b[0]['Memo'])
+
+    def test_memo_override(self):
+        out = os.path.join(self.tmp, 'legA_memo.csv')
+        self.lj.main([os.path.join(DATA, 'test_case_1_balanced.csv'), '--leg', 'a',
+                     '--journal-no', 'JJTEST', '--date', '1/9/2026', '--output', out, '--memo', 'Custom Note'])
+        with open(out, newline='') as f:
+            rows = list(csv.DictReader(f))
+        self.assertTrue(all(r['Memo'] == 'Custom Note' for r in rows))
+
+
+class PayrollJeMemo(unittest.TestCase):
+    def test_memo_blank_by_default_and_settable(self):
+        fixture = os.path.join(HERE, 'test_fixture.xlsx')
+        rows, _w, _f, _dr, _cr = payroll_je.convert(fixture, 'TEST001', '1/1/2026')
+        self.assertTrue(all(r[2] == '' for r in rows))
+        rows, _w, _f, _dr, _cr = payroll_je.convert(fixture, 'TEST001', '1/1/2026', memo='Department Breakdown')
+        self.assertTrue(all(r[2] == 'Department Breakdown' for r in rows))
+
 
 if __name__ == '__main__':
     unittest.main()

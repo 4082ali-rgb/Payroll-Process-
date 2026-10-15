@@ -15,6 +15,11 @@ Usage:
 --class defaults to "0090-GENERAL & ADMIN" (matches this company's actual posted
 entries); pass --class "" for no class, per the original spec's "company-wide,
 no class" assumption.
+--memo defaults to a label identifying which leg this is ("Dues and Subscriptions"
+for Leg A, "EI, CPP & Federal Tax" for Leg B), appended after the pay-date
+description so the three related CSVs (this leg's two, plus the department
+breakdown from payroll_je.py) are easy to tell apart at a glance; pass --memo ""
+for no memo.
 
 Deterministic. No LLM, no network. stdlib + openpyxl only.
 """
@@ -27,16 +32,17 @@ from payroll_automation import parse_csv, compute, LEG_A, LEG_B, BANK_ACCOUNT
 from payroll_je import parse_date, CSV_COLUMNS
 
 DEFAULT_CLASS = '0090-GENERAL & ADMIN'
+DEFAULT_MEMO = {'a': 'Dues and Subscriptions', 'b': 'EI, CPP & Federal Tax'}
 
 
-def build_rows(res, leg, journal_no, journal_date, description, class_name):
+def build_rows(res, leg, journal_no, journal_date, description, class_name, memo):
     leg_def, leg_values = (LEG_A, res['leg_a']) if leg == 'a' else (LEG_B, res['leg_b'])
     rows = []
     for key, name, _labels in leg_def:
         amt = leg_values[key]
-        rows.append([journal_no, journal_date, '', name, f'{amt:.2f}', '', description, '', '', class_name])
+        rows.append([journal_no, journal_date, memo, name, f'{amt:.2f}', '', description, '', '', class_name])
     bank_amt = leg_values[BANK_ACCOUNT[0]]
-    rows.append([journal_no, journal_date, '', BANK_ACCOUNT[1], '', f'{bank_amt:.2f}', description, '', '', ''])
+    rows.append([journal_no, journal_date, memo, BANK_ACCOUNT[1], '', f'{bank_amt:.2f}', description, '', '', ''])
     return rows
 
 
@@ -48,6 +54,7 @@ def main(argv=None):
     p.add_argument('--date', required=True, help='pay date, D/M/YYYY (e.g. 2/9/2026)')
     p.add_argument('--output', required=True)
     p.add_argument('--class', dest='class_name', default=DEFAULT_CLASS)
+    p.add_argument('--memo', default=None, help='defaults to a leg-identifying label; pass "" for none')
     a = p.parse_args(argv)
 
     try:
@@ -59,7 +66,8 @@ def main(argv=None):
     header_date, top_block, dept_blocks, dept_order, ignored = parse_csv(a.csv_path)
     res = compute(header_date, top_block, dept_blocks, dept_order, ignored=ignored)
     description = f'Payroll {human}'
-    rows = build_rows(res, a.leg, a.journal_no, journal_date, description, a.class_name)
+    memo = DEFAULT_MEMO[a.leg] if a.memo is None else a.memo
+    rows = build_rows(res, a.leg, a.journal_no, journal_date, description, a.class_name, memo)
 
     debits = sum(float(r[4]) for r in rows if r[4])
     credits = sum(float(r[5]) for r in rows if r[5])
