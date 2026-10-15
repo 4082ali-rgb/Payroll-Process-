@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import OrderedDict
 from decimal import Decimal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -161,14 +162,34 @@ class UnmappedTopBlockLabel(unittest.TestCase):
             ('B10657', 'Service Fees', Decimal('10.00')),
             ('B10657', 'GST', Decimal('0.50')),
             ('B10657', 'PST', Decimal('0.10')),
-            ('B10657', 'Pet Deposit', Decimal('-500.00')),
+            ('B10657', 'Gym Membership Reimbursement', Decimal('-500.00')),
         ]
         res = pa.compute('20260101', top_block, {}, [], ignored=[])
-        self.assertEqual(res['unmapped_top'], [('Pet Deposit', Decimal('-500.00'))])
-        self.assertIn({'type': 'unmapped_topblock_label', 'label': 'Pet Deposit', 'amount': Decimal('-500.00')},
-                      res['flags'])
+        self.assertEqual(res['unmapped_top'], [('Gym Membership Reimbursement', Decimal('-500.00'))])
+        self.assertIn({'type': 'unmapped_topblock_label', 'label': 'Gym Membership Reimbursement',
+                       'amount': Decimal('-500.00')}, res['flags'])
         lines = pa.review_lines(res)
-        self.assertTrue(any('Pet Deposit' in l and 'NOT included' in l for l in lines))
+        self.assertTrue(any('Gym Membership Reimbursement' in l and 'NOT included' in l for l in lines))
+
+    def test_pet_deposit_maps_to_staff_deposits_and_balances(self):
+        """Pet Deposit (confirmed 2026-10) folds into 2024 Staff Deposits like the
+        existing company-wide 'Staff Deposit' line. A negative net figure there must
+        land in the Debit column of the DRAFT workbook, never as a negative Credit."""
+        top_block = [
+            ('B10657', 'Net Pay', Decimal('1000.00')),
+            ('B10657', 'Pet Deposit', Decimal('-500.00')),
+        ]
+        res = pa.compute('20260101', top_block, OrderedDict(), [], ignored=[])
+        self.assertEqual(res['unmapped_top'], [])
+        self.assertEqual(res['closing']['2024_staff_deposit_company'], Decimal('-500.00'))
+        tmp = tempfile.mkdtemp()
+        draft = os.path.join(tmp, 'draft.xlsx')
+        pa.write_draft(res, draft)
+        from openpyxl import load_workbook
+        ws = load_workbook(draft).active
+        row = next(r for r in ws.iter_rows() if r[0].value == '2024 Staff Deposits')
+        self.assertEqual(row[1].value, 500.0)   # Debit column, positive
+        self.assertIsNone(row[2].value)         # Credit column empty
 
     def test_known_topblock_labels_never_flagged(self):
         """Regression guard: every label actually consumed by Leg A/B/closing must

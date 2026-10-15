@@ -126,7 +126,7 @@ UTILITIES_LABELS = ['Utilities 100', 'Utilities 170', 'Utilities Repayment']
 
 CLOSING = [   # ALL CREDIT
     ('6007_utilities', '6007 Utilities', UTILITIES_LABELS),
-    ('2024_staff_deposit_company', '2024 Staff Deposits', ['Staff Deposit']),
+    ('2024_staff_deposit_company', '2024 Staff Deposits', ['Staff Deposit', 'Pet Deposit']),
     ('2016_wages_payable', '2016 Wages Payable', WAGES_PAYABLE_LABELS),
     ('2017_federal_income_tax_payable', '2017 Federal Income Tax Payable', FED_TAX_LABELS),
     ('2014_cpp_payable', '2014 CPP Payable', CPP_PAYABLE_LABELS),
@@ -592,19 +592,30 @@ def write_draft(res, path):
                 desc += ' (Net Pay component)'
         else:
             desc = 'internal-consistency figure only (not bank-matched)'
-        ws.cell(r, 1, name); ws.cell(r, 3, float(amt)); ws.cell(r, 4, desc)
+        ws.cell(r, 1, name)
+        # A negative closing figure (e.g. a reversal) is economically a debit, not a
+        # negative credit - QuickBooks rejects a negative amount in either column.
+        if amt < 0:
+            ws.cell(r, 2, float(-amt))
+            desc = f'{desc} (net reversal this period, shown as a debit)'
+        else:
+            ws.cell(r, 3, float(amt))
+        ws.cell(r, 4, desc)
         r += 1
-    ws.cell(r, 1, 'Closing total').font = BOLD
+    ws.cell(r, 1, 'Closing subtotals').font = BOLD
+    ws.cell(r, 2, f'=SUM(B{first}:B{r - 1})').font = BOLD
     ws.cell(r, 3, f'=SUM(C{first}:C{r - 1})').font = BOLD
+    closing_debit_cell = f'B{r}'
     closing_total_cell = f'C{r}'
     r += 2
 
     ws.cell(r, 1, 'Combined grand total').font = BOLD
-    ws.cell(r, 2, f'={dept_total_cell}').font = BOLD
+    ws.cell(r, 2, f'={dept_total_cell}+{closing_debit_cell}').font = BOLD
     ws.cell(r, 3, f'={closing_total_cell}').font = BOLD
+    combined_debit_cell, combined_credit_cell = f'B{r}', f'C{r}'
     r += 1
     ws.cell(r, 1, 'Check (Debit - Credit, must be $0.00)').font = BOLD
-    ws.cell(r, 2, f'={dept_total_cell}-{closing_total_cell}').font = BOLD
+    ws.cell(r, 2, f'={combined_debit_cell}-{combined_credit_cell}').font = BOLD
     r += 2
 
     ws.cell(r, 1, 'NOTES — READ BEFORE POSTING').font = BOLD; r += 1
