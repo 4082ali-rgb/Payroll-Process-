@@ -85,16 +85,24 @@ class BalancedCase(unittest.TestCase):
         self.assertIn('DRAFT — built from raw payroll CSV, not a posted JE.', ws2['A2'].value)
 
     def test_end_to_end_draft_to_qb_csv(self):
-        """DRAFT workbook -> payroll_je.py must produce a balanced, fully-mapped CSV."""
+        """DRAFT workbook -> payroll_je.py must produce a balanced, fully-mapped CSV.
+        Debits/credits include the Net Pay bank-clearing leg (2016 Wages Payable debit
+        / 1004 Envision Bank Account credit) on top of the department matrix total."""
         _ref, draft = self.files
         rows, warnings, flagged, dr, cr = payroll_je.convert(draft, 'JJ0001', '5/9/2026')
         self.assertEqual(warnings, [])
         self.assertEqual(flagged, 0)
         self.assertEqual(dr, cr)
-        self.assertEqual(dr, D(self.exp['department_matrix_grand_total']))
-        classes = {r[9] for r in rows if r[4]}
-        self.assertEqual(classes, {'0010-ACCOMODATIONS', '0015-HOUSEKEEPING'})
+        self.assertEqual(dr, D(self.exp['department_matrix_grand_total']) + self.res['net_pay'])
+        dept_debit_rows = [r for r in rows if r[4] and r[3] != '2016 Wages Payable']
+        self.assertEqual({r[9] for r in dept_debit_rows}, {'0010-ACCOMODATIONS', '0015-HOUSEKEEPING'})
         self.assertTrue(all(r[9] == '' for r in rows if r[5]))
+        bank_rows = [r for r in rows if r[3] == '1004 Envision Bank Account']
+        self.assertEqual(len(bank_rows), 1)
+        self.assertEqual(Decimal(bank_rows[0][5]), self.res['net_pay'])
+        wp_debit_rows = [r for r in rows if r[3] == '2016 Wages Payable' and r[4]]
+        self.assertEqual(len(wp_debit_rows), 1)
+        self.assertEqual(Decimal(wp_debit_rows[0][4]), self.res['net_pay'])
 
     def test_cli_exit_code(self):
         p = subprocess.run([sys.executable, os.path.join(HERE, 'payroll_automation.py'),

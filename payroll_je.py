@@ -43,6 +43,7 @@ ACCOUNT_NAME_MAP = {
     "2014 CPP Payable": "2014 CPP Payable",
     "2013 EI Payable": "2013 EI Payable",
     "2015 RRSP Payable": "2015 RRSP Payable",
+    "1004 Envision Bank Account": "1004 Envision Bank Account",
 }
 
 CLASS_NAME_FIXUPS = {

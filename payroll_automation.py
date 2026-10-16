@@ -602,6 +602,24 @@ def write_draft(res, path):
             ws.cell(r, 3, float(amt))
         ws.cell(r, 4, desc)
         r += 1
+
+    # Net Pay bank-clearing leg: debits down Wages Payable by the Net Pay amount and
+    # credits the Envision Bank Account, matching the actual direct-deposit withdrawal.
+    # This leaves only the non-net-pay portion (garnishment/deductions) on Wages
+    # Payable. Confirmed with the user against a real posted entry (JJ3805, rows
+    # 111-112) - always included, not conditional on bank confirmation.
+    net_pay = res['net_pay']
+    if net_pay:
+        np_desc = res['bank_status'].get('net_pay', 'not yet confirmed')
+        ws.cell(r, 1, '2016 Wages Payable')
+        ws.cell(r, 2, float(net_pay))
+        ws.cell(r, 4, f'Net Pay bank clearing - {np_desc}')
+        r += 1
+        ws.cell(r, 1, BANK_ACCOUNT[1])
+        ws.cell(r, 3, float(net_pay))
+        ws.cell(r, 4, f'Net Pay bank clearing - {np_desc}')
+        r += 1
+
     ws.cell(r, 1, 'Closing subtotals').font = BOLD
     ws.cell(r, 2, f'=SUM(B{first}:B{r - 1})').font = BOLD
     ws.cell(r, 3, f'=SUM(C{first}:C{r - 1})').font = BOLD
