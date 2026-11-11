@@ -285,12 +285,39 @@ class LegJournalCsv(unittest.TestCase):
 
 
 class PayrollJeMemo(unittest.TestCase):
-    def test_memo_blank_by_default_and_settable(self):
+    def test_memo_defaults_to_department_breakdown_and_settable(self):
         fixture = os.path.join(HERE, 'test_fixture.xlsx')
         rows, _w, _f, _dr, _cr = payroll_je.convert(fixture, 'TEST001', '1/1/2026')
-        self.assertTrue(all(r[2] == '' for r in rows))
-        rows, _w, _f, _dr, _cr = payroll_je.convert(fixture, 'TEST001', '1/1/2026', memo='Department Breakdown')
         self.assertTrue(all(r[2] == 'Department Breakdown' for r in rows))
+        rows, _w, _f, _dr, _cr = payroll_je.convert(fixture, 'TEST001', '1/1/2026', memo='')
+        self.assertTrue(all(r[2] == '' for r in rows))
+
+
+class RunPayrollFourFiles(unittest.TestCase):
+    def test_four_deliverables_with_memos_and_bank_date(self):
+        import csv as _csv
+        import run_payroll
+        tmp = tempfile.mkdtemp()
+        raw = os.path.join(HERE, 'test_data', 'test_case_1_balanced.csv')
+        rc = run_payroll.main([raw, '--bank-date', '13/10/2026', '--dept-journal-no', 'JJ1',
+                               '--dues-journal-no', 'JJ2', '--ei-journal-no', 'JJ3', '--out-dir', tmp])
+        self.assertEqual(rc, 0)
+        names = sorted(os.listdir(tmp))
+        self.assertTrue(any(n.startswith('PYROLL_REFERENCE_') for n in names))
+        expected = {'JJ1_Department_Breakdown.csv': 'Department Breakdown',
+                    'JJ2_Dues_and_Subscriptions.csv': 'Dues and Subscriptions',
+                    'JJ3_EI_CPP_Federal_Tax.csv': 'EI, CPP & Federal Tax'}
+        for name, memo in expected.items():
+            with open(os.path.join(tmp, name), newline='', encoding='utf-8') as f:
+                rows = list(_csv.DictReader(f))
+            self.assertTrue(rows)
+            self.assertTrue(all(r['Memo'] == memo for r in rows), name)
+            self.assertTrue(all(r['*JournalDate'] == '13/10/2026' for r in rows), name)
+
+    def test_requires_bank_date_and_journal_numbers(self):
+        import run_payroll
+        with self.assertRaises(SystemExit):
+            run_payroll.main([os.path.join(HERE, 'test_data', 'test_case_1_balanced.csv')])
 
 
 if __name__ == '__main__':

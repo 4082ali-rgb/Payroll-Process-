@@ -12,6 +12,29 @@ raw payroll CSV
           └── je.csv                       QuickBooks Online JE import file
 ```
 
+## One command: `run_payroll.py` (the four deliverables)
+
+```
+python run_payroll.py raw.csv --bank-date 13/10/2026 \
+    --dept-journal-no JJ4178 --dues-journal-no JJ4179 --ei-journal-no JJ4180 --out-dir out/
+```
+
+Produces four files from the big payroll file:
+
+1. `PYROLL_REFERENCE_<period>.xlsx`, the worksheet (live formulas and checks)
+2. `<JJ>_Department_Breakdown.csv`, Memo `Department Breakdown`
+3. `<JJ>_Dues_and_Subscriptions.csv`, Memo `Dues and Subscriptions`
+4. `<JJ>_EI_CPP_Federal_Tax.csv`, Memo `EI, CPP & Federal Tax`
+
+(plus the intermediate `<period>_by_department_DRAFT.xlsx` the department journal is built from).
+
+* `--bank-date` is the day the entries **leave the bank**, not the batch header date. It is
+  the journal date on all three journals (D/M/YYYY).
+* The bank date and the three journal numbers are required and never guessed.
+* Optional `--bank-leg-a / --bank-leg-b / --bank-net-pay` run the bank cross-check.
+
+The steps below can also be run one at a time.
+
 ## Step 1: `payroll_automation.py`
 
 ```
@@ -33,7 +56,8 @@ python payroll_automation.py raw.csv --out-dir out/ --bank-leg-a 525.50 --bank-l
 python payroll_je.py out/20260901_by_department_DRAFT.xlsx --journal-no JJ2700 --date 5/9/2026 --output je.csv
 ```
 
-* `--journal-no` and `--date` are required. `--date` is strict D/M/YYYY.
+* `--journal-no` and `--date` are required. `--date` is the bank date, strict D/M/YYYY.
+* Memo defaults to `Department Breakdown` (`--memo ""` for none).
 * Account names are mapped through `ACCOUNT_NAME_MAP` by exact match. Anything unmapped is
   written as `<<REVIEW: ...>>`, warned on stderr, and the script exits 1 (the CSV is still written).
 * Debits and credits are summed before writing. Out of balance also exits 1.
