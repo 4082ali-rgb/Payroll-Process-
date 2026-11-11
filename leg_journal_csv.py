@@ -11,7 +11,8 @@ Usage:
     python leg_journal_csv.py <raw_payroll.csv> --leg b --journal-no JJ1235 --date D/M/YYYY --output legB.csv
 
 --journal-no and --date are required (no defaults - these change every pay period).
---date is strict D/M/YYYY, same rule as payroll_je.py.
+--date is the date the entry leaves the bank (not the batch header date), strict
+D/M/YYYY, same rule as payroll_je.py.
 --class defaults to "0090-GENERAL & ADMIN" (matches this company's actual posted
 entries); pass --class "" for no class, per the original spec's "company-wide,
 no class" assumption.
@@ -51,7 +52,7 @@ def main(argv=None):
     p.add_argument('csv_path')
     p.add_argument('--leg', required=True, choices=['a', 'b'])
     p.add_argument('--journal-no', required=True)
-    p.add_argument('--date', required=True, help='pay date, D/M/YYYY (e.g. 2/9/2026)')
+    p.add_argument('--date', required=True, help='bank date (the day the entry leaves the bank), D/M/YYYY (e.g. 13/10/2026)')
     p.add_argument('--output', required=True)
     p.add_argument('--class', dest='class_name', default=DEFAULT_CLASS)
     p.add_argument('--memo', default=None, help='defaults to a leg-identifying label; pass "" for none')

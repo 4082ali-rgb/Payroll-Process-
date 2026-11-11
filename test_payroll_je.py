@@ -50,7 +50,7 @@ class FixtureRun(unittest.TestCase):
             self.assertEqual(r['*JournalNo'], 'TEST001')
             self.assertEqual(r['*JournalDate'], '01/01/2026')
             self.assertEqual(r['Description'], 'Payroll 01 January 2026')
-            self.assertEqual(r['Memo'], ''); self.assertEqual(r['Name'], ''); self.assertEqual(r['Location'], '')
+            self.assertEqual(r['Memo'], 'Department Breakdown'); self.assertEqual(r['Name'], ''); self.assertEqual(r['Location'], '')
 
     def test_account_names_are_mapped_values_or_review(self):
         allowed = set(payroll_je.ACCOUNT_NAME_MAP.values())

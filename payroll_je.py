@@ -6,9 +6,10 @@ Usage:
     python payroll_je.py <input.xlsx> --journal-no JJ1234 --date D/M/YYYY --output <out.csv>
         [--memo "Department Breakdown"]
 
---memo is blank by default; pass a label (e.g. "Department Breakdown") to tell
-this entry apart from the related Leg A / Leg B entries from leg_journal_csv.py
-when all three CSVs are open side by side.
+--date is the date the money leaves the bank (not the payroll batch header date).
+--memo defaults to "Department Breakdown" so this entry is easy to tell apart from the
+related Leg A / Leg B entries from leg_journal_csv.py ("Dues and Subscriptions" and
+"EI, CPP & Federal Tax"); pass --memo "" for a blank memo.
 
 Deterministic parsing only: stdlib + openpyxl, single pass over the sheet.
 Unknown account names / classes / non-numeric amounts are never guessed: the row
@@ -113,7 +114,10 @@ def fmt(d):
     return '' if d is None else f'{d:.2f}'
 
 
-def convert(xlsx_path, journal_no, date_str, memo=''):
+DEFAULT_MEMO = 'Department Breakdown'
+
+
+def convert(xlsx_path, journal_no, date_str, memo=DEFAULT_MEMO):
     """Returns (rows, warnings, flagged_count, debits_total, credits_total)."""
     journal_date, human = parse_date(date_str)
     description = f'Payroll {human}'
@@ -199,13 +203,15 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('input_xlsx')
     p.add_argument('--journal-no', required=True)
-    p.add_argument('--date', required=True, help='pay date, D/M/YYYY (e.g. 1/8/2026)')
+    p.add_argument('--date', required=True, help='bank date (the day the entry leaves the bank), D/M/YYYY (e.g. 13/10/2026)')
     p.add_argument('--output', required=True)
-    p.add_argument('--memo', default='', help='optional label written to every row\'s Memo column (blank by default)')
+    p.add_argument('--memo', default=None,
+                   help='label for every row\'s Memo column; defaults to "Department Breakdown", pass "" for none')
     a = p.parse_args(argv)
 
     try:
-        rows, warnings, flagged, dr, cr = convert(a.input_xlsx, a.journal_no, a.date, memo=a.memo)
+        rows, warnings, flagged, dr, cr = convert(a.input_xlsx, a.journal_no, a.date,
+                                                       memo=DEFAULT_MEMO if a.memo is None else a.memo)
     except ValueError as e:
         print(f'ERROR: {e}', file=sys.stderr)
         return 2
